@@ -23,12 +23,10 @@
 
 constexpr int kMaxLoadString = 100;
 
-// Global Variables:
-HINSTANCE hInst; // current instance
-WCHAR szTitle[kMaxLoadString]; // The title bar text
-WCHAR szWindowClass[kMaxLoadString]; // the main window class name
+HINSTANCE hInst;
+WCHAR szTitle[kMaxLoadString];
+WCHAR szWindowClass[kMaxLoadString];
 
-// Forward declarations of functions included in this code module:
 ATOM MyRegisterClass(HINSTANCE hInstance);
 BOOL InitInstance(HINSTANCE, int);
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -41,39 +39,53 @@ namespace {
     std::mutex g_logMutex;
     std::filesystem::path g_logPath;
 
-    std::string ToUtf8(std::wstring_view s) {
-        if (s.empty()) {
+    std::string ToUtf8(const std::wstring_view str) {
+        if (str.empty()) {
             return {};
         }
-        const int needed = WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0, nullptr,
-                                               nullptr);
+        const int needed = WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            str.data(),
+            static_cast<int>(str.size()),
+            nullptr,
+            0,
+            nullptr,
+            nullptr);
         if (needed <= 0) {
             return {};
         }
         std::string out;
         out.resize(static_cast<size_t>(needed));
-        WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), needed, nullptr, nullptr);
+        WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            str.data(),
+            static_cast<int>(str.size()),
+            out.data(),
+            needed,
+            nullptr,
+            nullptr);
         return out;
     }
 
     std::filesystem::path GetExeDirectory() {
-        std::wstring buf;
-        buf.resize(MAX_PATH);
-        const DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
-        if (n == 0) {
+        std::wstring modulePath;
+        modulePath.resize(MAX_PATH);
+        const DWORD modulePathLen = GetModuleFileNameW(nullptr, modulePath.data(), static_cast<DWORD>(modulePath.size()));
+        if (modulePathLen == 0) {
             return std::filesystem::current_path();
         }
-        buf.resize(n);
-        std::filesystem::path exePath(buf);
+        modulePath.resize(modulePathLen);
+        std::filesystem::path exePath(modulePath);
         return exePath.has_parent_path() ? exePath.parent_path() : std::filesystem::current_path();
     }
 
     std::filesystem::path BuildDailyLogPath() {
         const auto now = std::chrono::system_clock::now();
-        const auto nowMs = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
-        const std::time_t tt = std::chrono::system_clock::to_time_t(now);
+        const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
         std::tm local{};
-        localtime_s(&local, &tt);
+        localtime_s(&local, &nowTime);
 
         std::wostringstream name;
         name << L"sayomirror-log-" << std::put_time(&local, L"%Y-%m-%d") << L".log";
@@ -84,14 +96,14 @@ namespace {
         const auto now = std::chrono::system_clock::now();
         const auto nowMs = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
         const auto msPart = static_cast<int>(nowMs.time_since_epoch().count() % 1000);
-        const std::time_t tt = std::chrono::system_clock::to_time_t(now);
+        const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
         std::tm local{};
-        localtime_s(&local, &tt);
+        (void)localtime_s(&local, &nowTime);
 
-        std::ostringstream oss;
-        oss << std::put_time(&local, "%Y-%m-%d %H:%M:%S")
-            << '.' << std::setw(3) << std::setfill('0') << msPart;
-        return oss.str();
+        std::ostringstream timestampStream;
+        timestampStream << std::put_time(&local, "%Y-%m-%d %H:%M:%S")
+                        << '.' << std::setw(3) << std::setfill('0') << msPart;
+        return timestampStream.str();
     }
 
     void LogLine(std::wstring_view message) {
@@ -110,43 +122,43 @@ namespace {
         out << BuildTimestampPrefix() << "  " << ToUtf8(message) << "\n";
     }
 
-    void StopCaptureThread(sayomirror::AppState* st) {
-        if (!st) {
+    void StopCaptureThread(sayomirror::AppState* appState) {
+        if (!appState) {
             return;
         }
-        st->stop.store(true, std::memory_order_relaxed);
-        if (st->captureThread.joinable()) {
-            st->captureThread.join();
+        appState->stop.store(true, std::memory_order_relaxed);
+        if (appState->captureThread.joinable()) {
+            appState->captureThread.join();
         }
     }
 
-    void StartCaptureThread(sayomirror::AppState* st, HWND hwnd) {
-        if (!st) {
+    void StartCaptureThread(sayomirror::AppState* appState, HWND hwnd) {
+        if (!appState) {
             return;
         }
-        st->stop.store(false, std::memory_order_relaxed);
-        st->captureThread = std::thread([st, hwnd]() {
-            while (!st->stop.load(std::memory_order_relaxed)) {
-                if (!st->dev || st->srcW == 0 || st->srcH == 0) {
+        appState->stop.store(false, std::memory_order_relaxed);
+        appState->captureThread = std::thread([appState, hwnd] {
+            while (!appState->stop.load(std::memory_order_relaxed)) {
+                if (!appState->dev || appState->srcW == 0 || appState->srcH == 0) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     continue;
                 }
 
                 std::vector<uint8_t> frame;
                 sayo::CaptureStats stats{};
-                const bool ok = CaptureScreenFrame(
-                    st->dev.get(),
-                    st->srcW,
-                    st->srcH,
-                    st->scratchIn,
+                const bool didCaptureFrame = CaptureScreenFrame(
+                    appState->dev.get(),
+                    appState->srcW,
+                    appState->srcH,
+                    appState->scratchIn,
                     frame,
                     &stats,
-                    st->proto);
+                    appState->proto);
 
-                if (ok) {
+                if (didCaptureFrame) {
                     {
-                        std::lock_guard<std::mutex> lock(st->latestMutex);
-                        st->latestRgb565.swap(frame);
+                        std::lock_guard<std::mutex> lock(appState->latestMutex);
+                        appState->latestRgb565.swap(frame);
                     }
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
@@ -155,11 +167,6 @@ namespace {
                 }
             }
         });
-    }
-
-    void DrawCenteredText(HDC hdc, RECT rc, const wchar_t* text) {
-        SetBkMode(hdc, TRANSPARENT);
-        DrawTextW(hdc, text ? text : L"", -1, &rc, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
     }
 }
 
@@ -175,8 +182,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                       _In_ int nCmdShow) {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
-
-    // TODO: Place code here.
 
     // Initialize global strings
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, kMaxLoadString);
@@ -242,15 +247,15 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     hInst = hInstance; // Store instance handle in our global variable
 
-    auto st = std::make_unique<sayomirror::AppState>();
+    auto appState = std::make_unique<sayomirror::AppState>();
     HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-                              CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, st.get());
+                              CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, appState.get());
 
     if (!hWnd) {
         return FALSE;
     }
 
-    (void)st.release();
+    (void)appState.release();
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
@@ -269,7 +274,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 //
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    auto* st = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+    auto* appState = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
     switch (message) {
     case WM_NCCREATE: {
         const auto* cs = reinterpret_cast<const CREATESTRUCTW*>(lParam);
@@ -277,7 +282,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         return DefWindowProcW(hWnd, message, wParam, lParam);
     }
     case WM_CREATE: {
-        st = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        appState = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
         LogLine(L"Opening device...");
 
         if (hid_init() != 0) {
@@ -285,31 +290,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         }
 
-        const sayo::OpenResult opened = OpenVendorInterface(st->ids, /*toStdErr*/ true);
-        st->dev.reset(opened.handle);
-        if (!st->dev) {
+        const sayo::OpenResult opened = OpenVendorInterface(appState->ids, sayo::OutputStream::StdOut);
+        appState->dev.reset(opened.handle);
+        if (!appState->dev) {
             LogLine(L"No compatible SayoDevice HID interface found.");
             break;
         }
 
-        const std::optional<std::pair<uint16_t, uint16_t>> lcd = TryGetLcdSize(st->dev.get(), st->proto);
+        const std::optional<std::pair<uint16_t, uint16_t>> lcd = TryGetLcdSize(appState->dev.get(), appState->proto);
         if (!lcd) {
             LogLine(L"Opened device, but LCD size query timed out.");
             break;
         }
-        st->srcW = lcd->first;
-        st->srcH = lcd->second;
-        if (st->srcW == 0 || st->srcH == 0) {
+        appState->srcW = lcd->first;
+        appState->srcH = lcd->second;
+        if (appState->srcW == 0 || appState->srcH == 0) {
             LogLine(L"Device reported invalid LCD size.");
             break;
         }
 
-        st->scratchIn.assign(st->proto.reportLen22, 0);
-        st->latestRgb565.assign(static_cast<size_t>(st->srcW) * static_cast<size_t>(st->srcH) * 2, 0);
+        appState->scratchIn.assign(appState->proto.reportLen22, 0);
+        appState->latestRgb565.assign(static_cast<size_t>(appState->srcW) * static_cast<size_t>(appState->srcH) * 2, 0);
 
-        const std::wstring okText = L"Capturing " + std::to_wstring(st->srcW) + L"x" + std::to_wstring(st->srcH);
+        const std::wstring okText = L"Capturing " + std::to_wstring(appState->srcW) + L"x" + std::to_wstring(appState->srcH);
         LogLine(okText);
-        StartCaptureThread(st, hWnd);
+        StartCaptureThread(appState, hWnd);
         SetTimer(hWnd, kPresentTimerId, kPresentTimerMs, nullptr);
         return 0;
     }
@@ -340,38 +345,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         RECT rc{};
         GetClientRect(hWnd, &rc);
 
-        if (!st) {
-            DrawCenteredText(hdc, rc, L"No app state.");
+        if (!appState) {
             EndPaint(hWnd, &ps);
             return 0;
         }
 
-        if (!st->dev) {
+        if (!appState->dev) {
             const auto logName = BuildDailyLogPath().filename().wstring();
             const std::wstring msg = L"Device not opened. Check " + logName;
-            DrawCenteredText(hdc, rc, msg.c_str());
             EndPaint(hWnd, &ps);
             return 0;
         }
 
         const int clientW = rc.right - rc.left;
         const int clientH = rc.bottom - rc.top;
-        const int scaleX = st->srcW ? (clientW / static_cast<int>(st->srcW)) : 1;
-        const int scaleY = st->srcH ? (clientH / static_cast<int>(st->srcH)) : 1;
+        const int scaleX = appState->srcW ? (clientW / static_cast<int>(appState->srcW)) : 1;
+        const int scaleY = appState->srcH ? (clientH / static_cast<int>(appState->srcH)) : 1;
         const int scale = (std::max)(1, (std::min)(scaleX, scaleY));
-        const int dstW = static_cast<int>(st->srcW) * scale;
-        const int dstH = static_cast<int>(st->srcH) * scale;
+        const int dstW = static_cast<int>(appState->srcW) * scale;
+        const int dstH = static_cast<int>(appState->srcH) * scale;
         const int dstX = (clientW - dstW) / 2;
         const int dstY = (clientH - dstH) / 2;
 
         {
-            std::lock_guard<std::mutex> lock(st->latestMutex);
-            if (!st->latestRgb565.empty()) {
+            std::lock_guard<std::mutex> lock(appState->latestMutex);
+            if (!appState->latestRgb565.empty()) {
                 sayo::BlitRgb565ToHdc(
                     hdc,
-                    st->latestRgb565,
-                    st->srcW,
-                    st->srcH,
+                    appState->latestRgb565,
+                    appState->srcW,
+                    appState->srcH,
                     dstX,
                     dstY,
                     dstW,
@@ -387,15 +390,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         PostQuitMessage(0);
         return 0;
     case WM_NCDESTROY: {
-        st = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        appState = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
         KillTimer(hWnd, kPresentTimerId);
-        StopCaptureThread(st);
-        if (st) {
-            st->dev.reset();
+        StopCaptureThread(appState);
+        if (appState) {
+            appState->dev.reset();
         }
         hid_exit();
         SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0);
-        delete st;
+        delete appState;
         return 0;
     }
     default:
