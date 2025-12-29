@@ -20,9 +20,11 @@ namespace sayo {
         uint16_t crc16_sum_words_le(const uint8_t* data, const size_t len) {
             uint16_t crc = 0;
             for (size_t i = 0; i < len; i++) {
-                crc = static_cast<uint16_t>(crc + ((i % 2 == 0)
-                                                       ? static_cast<uint16_t>(data[i])
-                                                       : static_cast<uint16_t>(data[i]) << 8));
+                uint16_t contribution = static_cast<uint16_t>(data[i]);
+                if ((i & 1u) != 0u) {
+                    contribution = static_cast<uint16_t>(contribution << 8);
+                }
+                crc = static_cast<uint16_t>(crc + contribution);
             }
             return crc;
         }
@@ -48,10 +50,16 @@ namespace sayo {
             const uint16_t packetCrc = static_cast<uint16_t>(report[2] | (static_cast<uint16_t>(report[3]) << 8));
             uint16_t crc = 0;
             for (size_t i = 0; i < reportLen; i++) {
-                const uint8_t b = (i == 2 || i == 3) ? 0 : report[i];
-                crc = static_cast<uint16_t>(crc + ((i % 2 == 0)
-                                                       ? static_cast<uint16_t>(b)
-                                                       : static_cast<uint16_t>(b) << 8));
+                uint8_t byte = report[i];
+                if (i == 2 || i == 3) {
+                    byte = 0;
+                }
+
+                uint16_t contribution = static_cast<uint16_t>(byte);
+                if ((i & 1u) != 0u) {
+                    contribution = static_cast<uint16_t>(contribution << 8);
+                }
+                crc = static_cast<uint16_t>(crc + contribution);
             }
             return packetCrc == crc;
         }
