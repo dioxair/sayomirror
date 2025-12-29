@@ -58,7 +58,7 @@ namespace {
         if (dm.dmDisplayFrequency <= 1) {
             return std::nullopt;
         }
-        return static_cast<double>(dm.dmDisplayFrequency);
+        return dm.dmDisplayFrequency;
     }
 
     double ComputeTargetPresentPeriodMs(HWND hwnd) {

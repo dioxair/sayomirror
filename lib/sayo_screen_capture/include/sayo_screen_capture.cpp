@@ -20,7 +20,7 @@ namespace sayo {
         uint16_t crc16_sum_words_le(const uint8_t* data, const size_t len) {
             uint16_t crc = 0;
             for (size_t i = 0; i < len; i++) {
-                uint16_t contribution = static_cast<uint16_t>(data[i]);
+                uint16_t contribution = data[i];
                 if ((i & 1u) != 0u) {
                     contribution = static_cast<uint16_t>(contribution << 8);
                 }
@@ -55,7 +55,7 @@ namespace sayo {
                     byte = 0;
                 }
 
-                uint16_t contribution = static_cast<uint16_t>(byte);
+                uint16_t contribution = byte;
                 if ((i & 1u) != 0u) {
                     contribution = static_cast<uint16_t>(contribution << 8);
                 }
