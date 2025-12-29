@@ -32,7 +32,6 @@ WCHAR szWindowClass[kMaxLoadString];
 ATOM MyRegisterClass(HINSTANCE hInstance);
 BOOL InitInstance(HINSTANCE, int);
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
 
 namespace {
     constexpr UINT_PTR kPresentTimerId = 1;
@@ -346,16 +345,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         return FALSE;
     }
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_SAYOMIRROR));
-
     MSG msg;
 
     // Main message loop:
     while (GetMessage(&msg, nullptr, 0, 0)) {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 
     return static_cast<int>(msg.wParam);
@@ -380,7 +375,8 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
     wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SAYOMIRROR));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = nullptr;
-    wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_SAYOMIRROR);
+    // No menu bar (removes the "File / About" strip).
+    wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
@@ -421,7 +417,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 //
 //  PURPOSE: Processes messages for the main window.
 //
-//  WM_COMMAND  - process the application menu
 //  WM_PAINT    - Paint the main window
 //  WM_DESTROY  - post a quit message and return
 //
@@ -496,20 +491,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         SetTimer(hWnd, kPresentTimerId, ComputeNextPresentDelayMs(appState), nullptr);
         return 0;
     }
-    case WM_COMMAND: {
-        // Parse the menu selections:
-        switch (int wmId = LOWORD(wParam)) {
-        case IDM_ABOUT:
-            DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-            break;
-        case IDM_EXIT:
-            DestroyWindow(hWnd);
-            break;
-        default:
-            return DefWindowProc(hWnd, message, wParam, lParam);
-        }
-    }
-    break;
     case WM_TIMER:
         if (wParam == kPresentTimerId) {
             InvalidateRect(hWnd, nullptr, FALSE);
@@ -592,21 +573,4 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
     return 0;
-}
-
-// Message handler for about box.
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message) {
-    case WM_INITDIALOG:
-        return TRUE;
-
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
-            EndDialog(hDlg, LOWORD(wParam));
-            return TRUE;
-        }
-        break;
-    }
-    return FALSE;
 }
