@@ -54,11 +54,16 @@ namespace sayo {
         int interfaceNumber = -1;
     };
 
+    enum class OutputStream {
+        StdErr,
+        StdOut
+    };
+
     // Enumerate available HID collections matching the device IDs. For debug
-    void DumpDevices(const DeviceIds& ids, bool toStdErr);
+    void DumpDevices(const DeviceIds& ids, OutputStream output);
 
     // Opens the vendor HID collection that can accept report-id 0x22 writes.
-    OpenResult OpenVendorInterface(const DeviceIds& ids, bool toStdErr);
+    OpenResult OpenVendorInterface(const DeviceIds& ids, OutputStream output);
 
     // Queries LCD size via SystemInfo (CMD 0x02). Returns nullopt on timeout.
     std::optional<std::pair<uint16_t, uint16_t>> TryGetLcdSize(

@@ -105,9 +105,9 @@ namespace sayo {
         }
     }
 
-    void DumpDevices(const DeviceIds& ids, const bool toStdErr) {
-        std::ostream& out = toStdErr ? std::cerr : std::cout;
-        std::wostream& wout = toStdErr ? std::wcerr : std::wcout;
+    void DumpDevices(const DeviceIds& ids, const OutputStream output) {
+        std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
+        std::wostream& wout = (output == OutputStream::StdErr) ? std::wcerr : std::wcout;
         hid_device_info* devs = hid_enumerate(ids.vid, ids.pid);
         const hid_device_info* cur = devs;
         out << "Found devices for VID=" << std::hex << ids.vid << " PID=" << ids.pid << std::dec << "\n";
@@ -131,8 +131,8 @@ namespace sayo {
         hid_free_enumeration(devs);
     }
 
-    OpenResult OpenVendorInterface(const DeviceIds& ids, const bool toStdErr) {
-        std::ostream& out = toStdErr ? std::cerr : std::cout;
+    OpenResult OpenVendorInterface(const DeviceIds& ids, const OutputStream output) {
+        std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
         OpenResult result{};
 
         hid_device_info* devs = hid_enumerate(ids.vid, ids.pid);
