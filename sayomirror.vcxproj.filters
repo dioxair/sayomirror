@@ -27,9 +27,21 @@
     <ClInclude Include="sayomirror.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lib\hidapi-win\include\hidapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\hidapi-win\include\hidapi_winapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\sayo_screen_capture\include\sayo_screen_capture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="sayomirror.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\sayo_screen_capture\include\sayo_screen_capture.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
