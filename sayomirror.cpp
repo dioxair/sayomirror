@@ -36,7 +36,111 @@ INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
 
 namespace {
     constexpr UINT_PTR kPresentTimerId = 1;
-    constexpr UINT kPresentTimerMs = 16; // ~60fps
+    constexpr UINT kPresentTimerFallbackMs = 16; // ~60fps
+
+    std::optional<double> TryGetMonitorRefreshHz(HWND hwnd) {
+        if (!hwnd) {
+            return std::nullopt;
+        }
+
+        const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFOEXW mi{};
+        mi.cbSize = sizeof(mi);
+        if (!GetMonitorInfoW(monitor, &mi)) {
+            return std::nullopt;
+        }
+
+        DEVMODEW dm{};
+        dm.dmSize = sizeof(dm);
+        if (!EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm)) {
+            return std::nullopt;
+        }
+
+        if (dm.dmDisplayFrequency <= 1) {
+            return std::nullopt;
+        }
+        return static_cast<double>(dm.dmDisplayFrequency);
+    }
+
+    double ComputeTargetPresentPeriodMs(HWND hwnd) {
+        const auto hz = TryGetMonitorRefreshHz(hwnd);
+        if (!hz || *hz <= 0.0) {
+            return 0.0;
+        }
+        return 1000.0 / *hz;
+    }
+
+    UINT ComputeNextPresentDelayMs(sayomirror::AppState* appState) {
+        if (!appState || appState->presentTargetPeriodMs <= 0.0) {
+            return kPresentTimerFallbackMs;
+        }
+
+        const double target = appState->presentTargetPeriodMs;
+        const double baseD = (std::max)(1.0, std::floor(target));
+        const double frac = (std::max)(0.0, target - baseD);
+
+        appState->presentFracAccumulatorMs += frac;
+        UINT delay = static_cast<UINT>(baseD);
+        if (appState->presentFracAccumulatorMs >= 1.0) {
+            delay += 1;
+            appState->presentFracAccumulatorMs -= 1.0;
+        }
+
+        return (std::max)(1u, delay);
+    }
+
+    void FitWindowToDevice(HWND hwnd, const uint16_t srcW, const uint16_t srcH) {
+        if (!hwnd || srcW == 0 || srcH == 0) {
+            return;
+        }
+
+        const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (!GetMonitorInfoW(monitor, &monitorInfo)) {
+            return;
+        }
+
+        const int workW = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+        const int workH = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
+        if (workW <= 0 || workH <= 0) {
+            return;
+        }
+
+        const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        const LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+
+        const int maxScaleByClient = (std::max)(
+            1,
+            (std::min)(workW / static_cast<int>(srcW), workH / static_cast<int>(srcH)));
+
+        int chosenScale = 1;
+        for (int scale = maxScaleByClient; scale >= 1; --scale) {
+            RECT windowRect{0, 0, static_cast<LONG>(srcW) * scale, static_cast<LONG>(srcH) * scale};
+            if (!AdjustWindowRectEx(&windowRect, static_cast<DWORD>(style), TRUE, static_cast<DWORD>(exStyle))) {
+                continue;
+            }
+
+            const int winW = windowRect.right - windowRect.left;
+            const int winH = windowRect.bottom - windowRect.top;
+            if (winW <= workW && winH <= workH) {
+                chosenScale = scale;
+                break;
+            }
+        }
+
+        RECT windowRect{0, 0, static_cast<LONG>(srcW) * chosenScale, static_cast<LONG>(srcH) * chosenScale};
+        if (!AdjustWindowRectEx(&windowRect, static_cast<DWORD>(style), TRUE, static_cast<DWORD>(exStyle))) {
+            return;
+        }
+
+        const int winW = windowRect.right - windowRect.left;
+        const int winH = windowRect.bottom - windowRect.top;
+        const int x = monitorInfo.rcWork.left + (workW - winW) / 2;
+        const int y = monitorInfo.rcWork.top + (workH - winH) / 2;
+
+        SetWindowPos(hwnd, nullptr, x, y, winW, winH, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     std::mutex g_logMutex;
     std::filesystem::path g_logPath;
@@ -268,14 +372,14 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 
     wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wcex.lpfnWndProc = WndProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = 0;
     wcex.hInstance = hInstance;
     wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SAYOMIRROR));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = reinterpret_cast<HBRUSH>((COLOR_WINDOW + 1));
+    wcex.hbrBackground = nullptr;
     wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_SAYOMIRROR);
     wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
@@ -377,11 +481,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         LogLine(std::format(L"LCD size reported by device: {}x{}", appState->srcW, appState->srcH));
 
+        FitWindowToDevice(hWnd, appState->srcW, appState->srcH);
+
+        appState->presentTargetPeriodMs = ComputeTargetPresentPeriodMs(hWnd);
+        if (appState->presentTargetPeriodMs > 0.0) {
+            const double hz = 1000.0 / appState->presentTargetPeriodMs;
+            LogLine(std::format(L"monitor refresh (approx): {:.3f} Hz (target {:.3f} ms)", hz, appState->presentTargetPeriodMs));
+        }
+
         appState->scratchIn.assign(appState->proto.reportLen22, 0);
         appState->latestRgb565.assign(static_cast<size_t>(appState->srcW) * static_cast<size_t>(appState->srcH) * 2, 0);
 
         StartCaptureThread(appState, hWnd);
-        SetTimer(hWnd, kPresentTimerId, kPresentTimerMs, nullptr);
+        SetTimer(hWnd, kPresentTimerId, ComputeNextPresentDelayMs(appState), nullptr);
         return 0;
     }
     case WM_COMMAND: {
@@ -401,9 +513,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_TIMER:
         if (wParam == kPresentTimerId) {
             InvalidateRect(hWnd, nullptr, FALSE);
+
+            if (appState && appState->presentTargetPeriodMs > 0.0) {
+                KillTimer(hWnd, kPresentTimerId);
+                SetTimer(hWnd, kPresentTimerId, ComputeNextPresentDelayMs(appState), nullptr);
+            }
             return 0;
         }
         break;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_LBUTTONDBLCLK:
+        if (appState && appState->srcW && appState->srcH) {
+            FitWindowToDevice(hWnd, appState->srcW, appState->srcH);
+        }
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
@@ -425,13 +549,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         const int clientW = rc.right - rc.left;
         const int clientH = rc.bottom - rc.top;
-        const int scaleX = appState->srcW ? (clientW / static_cast<int>(appState->srcW)) : 1;
-        const int scaleY = appState->srcH ? (clientH / static_cast<int>(appState->srcH)) : 1;
-        const int scale = (std::max)(1, (std::min)(scaleX, scaleY));
-        const int dstW = static_cast<int>(appState->srcW) * scale;
-        const int dstH = static_cast<int>(appState->srcH) * scale;
-        const int dstX = (clientW - dstW) / 2;
-        const int dstY = (clientH - dstH) / 2;
+        constexpr int dstX = 0;
+        constexpr int dstY = 0;
+        const int dstW = clientW;
+        const int dstH = clientH;
 
         {
             std::lock_guard<std::mutex> lock(appState->latestMutex);

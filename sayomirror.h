@@ -30,6 +30,11 @@ namespace sayomirror {
 		std::vector<uint8_t> latestRgb565;
 		std::mutex latestMutex;
 
+		// Present scheduling: SetTimer only takes integer milliseconds, so we
+		// store a fractional target period and optionally dither the interval.
+		double presentTargetPeriodMs = 0.0;
+		double presentFracAccumulatorMs = 0.0;
+
 		std::atomic<bool> stop{false};
 		std::thread captureThread;
 	};
