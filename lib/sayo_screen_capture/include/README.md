@@ -1,0 +1,1 @@
+Big thanks to [svr2kos2](https://github.com/svr2kos2) for [sayo_api_rs](https://github.com/svr2kos2/sayo_api_rs) and [sayo_rs (sayodevice_protocol.xlsx)](https://github.com/svr2kos2/sayo_rs), this library is a reimplementation of the parts I needed for sayomirror in C++.
