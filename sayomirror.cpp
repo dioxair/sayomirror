@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <format>
 #include <iomanip>
 #include <memory>
 #include <mutex>
@@ -38,6 +40,15 @@ namespace {
 
     std::mutex g_logMutex;
     std::filesystem::path g_logPath;
+
+    std::wstring AsciiToWide(const std::string_view str) {
+        std::wstring out;
+        out.reserve(str.size());
+        for (const unsigned char c : str) {
+            out.push_back(c);
+        }
+        return out;
+    }
 
     std::string ToUtf8(const std::wstring_view str) {
         if (str.empty()) {
@@ -85,7 +96,8 @@ namespace {
         const auto now = std::chrono::system_clock::now();
         const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
         std::tm local{};
-        localtime_s(&local, &nowTime);
+        // cast to void cause idgaf about using the return value
+        (void)localtime_s(&local, &nowTime);
 
         std::wostringstream name;
         name << L"sayomirror-log-" << std::put_time(&local, L"%Y-%m-%d") << L".log";
@@ -138,6 +150,14 @@ namespace {
         }
         appState->stop.store(false, std::memory_order_relaxed);
         appState->captureThread = std::thread([appState, hwnd] {
+            using Clock = std::chrono::steady_clock;
+
+            auto lastLog = Clock::now();
+            auto windowStart = lastLog;
+            uint32_t framesInWindow = 0;
+            uint32_t lastFrameMs = 0;
+            sayo::CaptureStats lastStats{};
+
             while (!appState->stop.load(std::memory_order_relaxed)) {
                 if (!appState->dev || appState->srcW == 0 || appState->srcH == 0) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -146,6 +166,7 @@ namespace {
 
                 std::vector<uint8_t> frame;
                 sayo::CaptureStats stats{};
+                const auto t0 = Clock::now();
                 const bool didCaptureFrame = CaptureScreenFrame(
                     appState->dev.get(),
                     appState->srcW,
@@ -154,13 +175,41 @@ namespace {
                     frame,
                     &stats,
                     appState->proto);
+                const auto t1 = Clock::now();
+                lastFrameMs = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
                 if (didCaptureFrame) {
+                    framesInWindow++;
+                    lastStats = stats;
+
                     {
                         std::lock_guard<std::mutex> lock(appState->latestMutex);
                         appState->latestRgb565.swap(frame);
                     }
                     InvalidateRect(hwnd, nullptr, FALSE);
+
+                    const auto now = Clock::now();
+                    if (now - lastLog >= std::chrono::seconds(1)) {
+                        const double secs = std::chrono::duration<double>(now - windowStart).count();
+                        int fps = 0;
+                        if (secs > 0.0) {
+                            fps = static_cast<int>(std::lround(static_cast<double>(framesInWindow) / secs));
+                        }
+                        const unsigned long long expectedBytes =
+                            static_cast<size_t>(appState->srcW) * static_cast<size_t>(appState->srcH) * 2ull;
+
+                        LogLine(std::format(
+                            L"screen cap stats: {} fps, last={}ms, packets={}, bytes={}/{}",
+                            fps,
+                            lastFrameMs,
+                            lastStats.packets,
+                            lastStats.bytesCovered,
+                            expectedBytes));
+
+                        lastLog = now;
+                        windowStart = now;
+                        framesInWindow = 0;
+                    }
                 }
                 else {
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -226,7 +275,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
     wcex.hInstance = hInstance;
     wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SAYOMIRROR));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.hbrBackground = reinterpret_cast<HBRUSH>((COLOR_WINDOW + 1));
     wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_SAYOMIRROR);
     wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
@@ -283,7 +332,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     }
     case WM_CREATE: {
         appState = reinterpret_cast<sayomirror::AppState*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-        LogLine(L"Opening device...");
 
         if (hid_init() != 0) {
             LogLine(L"hid_init() failed.");
@@ -295,6 +343,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (!appState->dev) {
             LogLine(L"No compatible SayoDevice HID interface found.");
             break;
+        }
+
+        LogLine(std::format(
+            L"Opening path: {} (interface={} usage_page=0x{:x} usage=0x{:x})",
+            AsciiToWide(opened.openedPath),
+            opened.interfaceNumber,
+            static_cast<unsigned>(opened.usagePage),
+            static_cast<unsigned>(opened.usage)));
+
+        wchar_t buf[256]{};
+        if (hid_get_manufacturer_string(appState->dev.get(), buf, _countof(buf)) == 0) {
+            LogLine(std::format(L"Manufacturer String: {}", std::wstring_view(buf)));
+        }
+        if (hid_get_product_string(appState->dev.get(), buf, _countof(buf)) == 0) {
+            LogLine(std::format(L"Product String: {}", std::wstring_view(buf)));
+        }
+        if (hid_get_serial_number_string(appState->dev.get(), buf, _countof(buf)) == 0) {
+            LogLine(std::format(L"Serial Number String: {}", std::wstring_view(buf)));
         }
 
         const std::optional<std::pair<uint16_t, uint16_t>> lcd = TryGetLcdSize(appState->dev.get(), appState->proto);
@@ -309,11 +375,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         }
 
+        LogLine(std::format(L"LCD size reported by device: {}x{}", appState->srcW, appState->srcH));
+
         appState->scratchIn.assign(appState->proto.reportLen22, 0);
         appState->latestRgb565.assign(static_cast<size_t>(appState->srcW) * static_cast<size_t>(appState->srcH) * 2, 0);
 
-        const std::wstring okText = L"Capturing " + std::to_wstring(appState->srcW) + L"x" + std::to_wstring(appState->srcH);
-        LogLine(okText);
         StartCaptureThread(appState, hWnd);
         SetTimer(hWnd, kPresentTimerId, kPresentTimerMs, nullptr);
         return 0;
