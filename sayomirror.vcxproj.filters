@@ -58,4 +58,11 @@
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="lib\hidapi-win\x64\hidapi.dll" />
+    <None Include="lib\hidapi-win\x64\hidapi.pdb" />
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="lib\hidapi-win\x64\hidapi.lib" />
+  </ItemGroup>
 </Project>
