@@ -1,5 +1,5 @@
 # sayomirror
-<img width="1762" height="932" alt="sayomirror_KDQStWV0hV" src="https://github.com/user-attachments/assets/3434afd0-0ba2-4836-b1f1-fca85e7e913e" />
+<img width="1762" height="912" alt="Image of a SayoDevice O3C++'s screen being mirrored through sayomirror" src="https://github.com/user-attachments/assets/bc7d89cf-2d1a-43d5-8877-cb304595d7b9" />
 
 A small Win32 C++ app displays the internal screen of your SayoDevice O3C/O3C++ in a desktop window 
 
