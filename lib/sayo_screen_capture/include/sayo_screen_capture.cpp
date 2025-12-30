@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cwctype>
 #include <fstream>
 #include <iostream>
 
@@ -17,6 +18,39 @@
 
 namespace sayo {
     namespace {
+        std::wstring to_lower_copy(std::wstring s) {
+            for (wchar_t& ch : s) {
+                ch = static_cast<wchar_t>(std::towlower(ch));
+            }
+            return s;
+        }
+
+        bool wcontains_ci(const wchar_t* str, const std::wstring& search) {
+            if (search.empty()) {
+                return true;
+            }
+            if (!str) {
+                return false;
+            }
+            std::wstring wstr(str);
+            const std::wstring hLower = to_lower_copy(std::move(wstr));
+            const std::wstring nLower = to_lower_copy(search);
+            return hLower.find(nLower) != std::wstring::npos;
+        }
+
+        bool matches_device_filters(const hid_device_info* it, const DeviceIds& ids) {
+            if (!it) {
+                return false;
+            }
+            if (wcontains_ci(it->manufacturer_string, ids.manufacturerContains)) {
+                return true;
+            }
+            if (wcontains_ci(it->product_string, ids.productContains)) {
+                return true;
+            }
+            return false;
+        }
+
         uint16_t crc16_sum_words_le(const uint8_t* data, const size_t len) {
             uint16_t crc = 0;
             for (size_t i = 0; i < len; i++) {
@@ -120,6 +154,10 @@ namespace sayo {
         const hid_device_info* cur = devs;
         out << "Found devices for VID=" << std::hex << ids.vid << " PID=" << ids.pid << std::dec << "\n";
         while (cur) {
+            if (!matches_device_filters(cur, ids)) {
+                cur = cur->next;
+                continue;
+            }
             out << "- path=" << (cur->path ? cur->path : "")
                 << " interface=" << cur->interface_number
                 << " usage_page=0x" << std::hex << cur->usage_page
@@ -143,42 +181,60 @@ namespace sayo {
         std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
         OpenResult result{};
 
-        hid_device_info* devs = hid_enumerate(ids.vid, ids.pid);
-        const hid_device_info* best = nullptr;
+        auto pick_best = [&](hid_device_info* devsList) -> const hid_device_info* {
+            const hid_device_info* best = nullptr;
 
-        // IMPORTANT: MI_01 exposes multiple top-level collections.
-        // Some of them are keyboard/consumer/etc and will deny WriteFile.
-        // The report-id 0x22 channel is typically exposed as usage_page=0xFF12 usage=0x02.
-        auto find_first = [&](const unsigned short usagePage, const unsigned short usage) -> const hid_device_info* {
-            for (const hid_device_info* it = devs; it; it = it->next) {
-                if (it->interface_number != 1) {
-                    continue;
+            // IMPORTANT: MI_01 exposes multiple top-level collections.
+            // Some of them are keyboard/consumer/etc and will deny WriteFile.
+            // The report-id 0x22 channel is typically exposed as usage_page=0xFF12 usage=0x02.
+            auto find_first = [&](const unsigned short usagePage, const unsigned short usage) -> const hid_device_info* {
+                for (const hid_device_info* it = devsList; it; it = it->next) {
+                    if (it->interface_number != 1) {
+                        continue;
+                    }
+                    if (!matches_device_filters(it, ids)) {
+                        continue;
+                    }
+                    if (it->usage_page == usagePage && it->usage == usage) {
+                        return it;
+                    }
                 }
-                if (it->usage_page == usagePage && it->usage == usage) {
-                    return it;
+                return nullptr;
+            };
+
+            best = find_first(0xFF12, 0x0002);
+            if (!best) {
+                best = find_first(0xFF11, 0x0002);
+            }
+            if (!best) {
+                best = find_first(0xFF00, 0x0001);
+            }
+            if (!best) {
+                // last resort: pick the first interface-1 collection that is not a standard desktop/consumer page.
+                for (const hid_device_info* it = devsList; it; it = it->next) {
+                    if (it->interface_number != 1) {
+                        continue;
+                    }
+                    if (!matches_device_filters(it, ids)) {
+                        continue;
+                    }
+                    if (it->usage_page >= 0xFF00) {
+                        best = it;
+                        break;
+                    }
                 }
             }
-            return nullptr;
+
+            return best;
         };
 
-        best = find_first(0xFF12, 0x0002);
-        if (!best) {
-            best = find_first(0xFF11, 0x0002);
-        }
-        if (!best) {
-            best = find_first(0xFF00, 0x0001);
-        }
-        if (!best) {
-            // last resort: pick the first interface-1 collection that is not a standard desktop/consumer page.
-            for (const hid_device_info* it = devs; it; it = it->next) {
-                if (it->interface_number != 1) {
-                    continue;
-                }
-                if (it->usage_page >= 0xFF00) {
-                    best = it;
-                    break;
-                }
-            }
+        hid_device_info* devs = hid_enumerate(ids.vid, ids.pid);
+        const hid_device_info* best = pick_best(devs);
+        if (!best && (ids.vid != 0 || ids.pid != 0)) {
+            out << "No matching devices found for VID/PID, falling back to enumerate all HID devices.\n";
+            hid_free_enumeration(devs);
+            devs = hid_enumerate(0, 0);
+            best = pick_best(devs);
         }
 
         if (best && best->path) {
