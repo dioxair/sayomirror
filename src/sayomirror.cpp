@@ -190,7 +190,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         sayomirror::logging::LogLine(std::format(L"LCD size reported by device: {}x{}", appState->srcW,
                                                  appState->srcH));
 
-        sayomirror::window_utils::FitWindowToDevice(hWnd, appState->srcW, appState->srcH);
+        sayomirror::window_utils::FitWindowToDevice(hWnd, appState->srcW, appState->srcH,
+                                                    sayomirror::window_utils::FitMode::BestIntegerScale);
 
         appState->presentTargetPeriodMs = sayomirror::window_utils::ComputeTargetPresentPeriodMs(hWnd);
         if (appState->presentTargetPeriodMs > 0.0) {
@@ -227,7 +228,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         return DefWindowProc(hWnd, message, wParam, lParam);
     case WM_LBUTTONDBLCLK:
         if (appState && appState->srcW && appState->srcH) {
-            sayomirror::window_utils::FitWindowToDevice(hWnd, appState->srcW, appState->srcH);
+            const bool isShiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            const auto mode = isShiftDown
+                                  ? sayomirror::window_utils::FitMode::Native1x
+                                  : sayomirror::window_utils::FitMode::BestIntegerScale;
+            sayomirror::window_utils::FitWindowToDevice(hWnd, appState->srcW, appState->srcH, mode);
         }
         return 0;
     case WM_PAINT: {

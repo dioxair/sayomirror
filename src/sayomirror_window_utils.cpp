@@ -31,7 +31,7 @@ std::optional<double> sayomirror::window_utils::TryGetMonitorRefreshHz(const HWN
 	if (dm.dmDisplayFrequency <= 1) {
 		return std::nullopt;
 	}
-	return static_cast<double>(dm.dmDisplayFrequency);
+	return dm.dmDisplayFrequency;
 }
 
 double sayomirror::window_utils::ComputeTargetPresentPeriodMs(const HWND hwnd) {
@@ -61,7 +61,7 @@ UINT sayomirror::window_utils::ComputeNextPresentDelayMs(sayomirror::AppState* a
 	return (std::max)(1u, delay);
 }
 
-void sayomirror::window_utils::FitWindowToDevice(const HWND hwnd, const uint16_t srcW, const uint16_t srcH) {
+void sayomirror::window_utils::FitWindowToDevice(const HWND hwnd, const uint16_t srcW, const uint16_t srcH, const FitMode mode) {
 	if (!hwnd || srcW == 0 || srcH == 0) {
 		return;
 	}
@@ -87,29 +87,47 @@ void sayomirror::window_utils::FitWindowToDevice(const HWND hwnd, const uint16_t
 		(std::min)(workW / static_cast<int>(srcW), workH / static_cast<int>(srcH)));
 
 	int chosenScale = 1;
-	for (int scale = maxScaleByClient; scale >= 1; --scale) {
-		RECT windowRect{0, 0, static_cast<LONG>(srcW) * scale, static_cast<LONG>(srcH) * scale};
-		if (!AdjustWindowRectEx(&windowRect, static_cast<DWORD>(style), TRUE, static_cast<DWORD>(exStyle))) {
-			continue;
-		}
+	if (mode == FitMode::BestIntegerScale) {
+		for (int scale = maxScaleByClient; scale >= 1; --scale) {
+			RECT windowRect{0, 0, static_cast<LONG>(srcW) * scale, static_cast<LONG>(srcH) * scale};
+			if (!AdjustWindowRectEx(&windowRect, static_cast<DWORD>(style), FALSE, static_cast<DWORD>(exStyle))) {
+				continue;
+			}
 
-		const int winW = windowRect.right - windowRect.left;
-		const int winH = windowRect.bottom - windowRect.top;
-		if (winW <= workW && winH <= workH) {
-			chosenScale = scale;
-			break;
+			const int winW = windowRect.right - windowRect.left;
+			const int winH = windowRect.bottom - windowRect.top;
+			if (winW <= workW && winH <= workH) {
+				chosenScale = scale;
+				break;
+			}
 		}
 	}
 
 	RECT windowRect{0, 0, static_cast<LONG>(srcW) * chosenScale, static_cast<LONG>(srcH) * chosenScale};
-	if (!AdjustWindowRectEx(&windowRect, static_cast<DWORD>(style), TRUE, static_cast<DWORD>(exStyle))) {
+	if (!AdjustWindowRectEx(&windowRect, static_cast<DWORD>(style), FALSE, static_cast<DWORD>(exStyle))) {
 		return;
 	}
 
 	const int winW = windowRect.right - windowRect.left;
 	const int winH = windowRect.bottom - windowRect.top;
-	const int x = monitorInfo.rcWork.left + (workW - winW) / 2;
-	const int y = monitorInfo.rcWork.top + (workH - winH) / 2;
+
+	RECT currentRect{};
+	int x = monitorInfo.rcWork.left;
+	int y = monitorInfo.rcWork.top;
+	if (GetWindowRect(hwnd, &currentRect)) {
+		x = currentRect.left;
+		y = currentRect.top;
+	}
+
+	const int minX = monitorInfo.rcWork.left;
+	const int maxX = monitorInfo.rcWork.right - winW;
+	const int minY = monitorInfo.rcWork.top;
+	const int maxY = monitorInfo.rcWork.bottom - winH;
+
+	if (x < minX) x = minX;
+	if (x > maxX) x = maxX;
+	if (y < minY) y = minY;
+	if (y > maxY) y = maxY;
 
 	SetWindowPos(hwnd, nullptr, x, y, winW, winH, SWP_NOZORDER | SWP_NOACTIVATE);
 }
