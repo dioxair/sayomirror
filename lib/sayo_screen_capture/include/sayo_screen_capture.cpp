@@ -45,10 +45,7 @@ namespace sayo {
             if (!it) {
                 return false;
             }
-            if (wcontains_ci(it->manufacturer_string, ids.manufacturerContains)) {
-                return true;
-            }
-            if (wcontains_ci(it->product_string, ids.productContains)) {
+            if (it->vendor_id == ids.vid && it->product_id == ids.pid) {
                 return true;
             }
             return false;
@@ -194,6 +191,7 @@ namespace sayo {
             // IMPORTANT: MI_01 exposes multiple top-level collections.
             // Some of them are keyboard/consumer/etc and will deny WriteFile.
             // The report-id 0x22 channel is typically exposed as usage_page=0xFF12 usage=0x02.
+            // the id 0x22 is for high speed mode, 0x21 is used otherwise
             auto find_first = [&](const unsigned short usagePage, const unsigned short usage) -> const hid_device_info*
             {
                 for (const hid_device_info* it = devsList; it; it = it->next) {
@@ -314,6 +312,57 @@ namespace sayo {
             const uint16_t w = static_cast<uint16_t>(payload[0] | (static_cast<uint16_t>(payload[1]) << 8));
             const uint16_t hgt = static_cast<uint16_t>(payload[2] | (static_cast<uint16_t>(payload[3]) << 8));
             return std::make_pair(w, hgt);
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<std::uint8_t> TryGetRefreshRate(hid_device* dev, const ProtocolConstants& proto) {
+        // Request SystemInfo (CMD 0x02), index 0, empty body.
+        const std::vector<uint8_t> out = build_report_22(proto.echo, proto.cmdSystemInfo, 0x00, {}, proto.headerSize,
+            proto.reportLen22);
+        const int response = hid_write(dev, out.data(), static_cast<int>(out.size()));
+        if (response < 0) {
+            return std::nullopt;
+        }
+
+        std::vector<uint8_t> in(proto.reportLen22, 0);
+        const auto start = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(proto.commandTimeoutMs)) {
+            const int r = hid_read_timeout(dev, in.data(), static_cast<int>(in.size()),
+                static_cast<int>(proto.readTimeoutMs));
+            if (r <= 0) {
+                continue;
+            }
+            if (static_cast<size_t>(r) < proto.headerSize) {
+                continue;
+            }
+
+            const HidHeader h = parse_header(in.data(), static_cast<size_t>(r));
+            if (h.reportId != proto.reportId22) {
+                continue;
+            }
+            if (h.echo != proto.echo && h.echo != 0x00) {
+                continue;
+            }
+            if (!verify_crc(in.data(), static_cast<size_t>(r), proto.headerSize)) {
+                continue;
+            }
+            if (h.cmd != proto.cmdSystemInfo) {
+                continue;
+            }
+
+            const size_t dataEnd = static_cast<size_t>(h.len) + 4;
+            if (dataEnd <= proto.headerSize || dataEnd > in.size()) {
+                continue;
+            }
+            const size_t payloadLen = dataEnd - proto.headerSize;
+            if (payloadLen < 5) {
+                continue;
+            }
+            const uint8_t* payload = in.data() + proto.headerSize;
+            const uint8_t hz = static_cast<uint8_t>(payload[4] | (static_cast<uint8_t>(payload[5]) << 8));
+            return hz;
         }
 
         return std::nullopt;

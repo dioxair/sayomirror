@@ -176,7 +176,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
 #endif
 
-        const std::optional<std::pair<uint16_t, uint16_t>> lcd = TryGetLcdSize(appState->dev.get(), appState->proto);
+        const std::optional<std::pair<uint16_t, uint16_t>> lcd = sayo::TryGetLcdSize(appState->dev.get(), appState->proto);
         if (!lcd) {
             sayomirror::logging::LogLine(L"Opened device, but LCD size query timed out.");
             break;

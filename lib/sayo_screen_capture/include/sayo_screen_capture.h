@@ -35,15 +35,8 @@ namespace sayo {
 
     // shoutout to this sketchy ass german website for saving this project: https://www.uwe-sieber.de/usbtreeview_e.html#download
     struct DeviceIds {
-        // if you are reading this (yes you!) and you own a sayodevice o3c/o3c++, make a github issue with
-        // what the usb device tree viewer reports as your sayodevice's vendor id and product id so i can
-        // make this project more compatible with all models/revisions.
         unsigned short vid = 0x8089;
         unsigned short pid = 0x0009;
-
-        // fallbacks that i hope and pray work if hardcoded vid and pid don't work
-        std::wstring manufacturerContains = L"SayoDevice";
-        std::wstring productContains = L"O3C";
     };
 
     struct ProtocolConstants {
@@ -79,6 +72,11 @@ namespace sayo {
 
     // Queries LCD size via SystemInfo (CMD 0x02). Returns nullopt on timeout.
     std::optional<std::pair<uint16_t, uint16_t>> TryGetLcdSize(
+        hid_device* dev,
+        const ProtocolConstants& proto = {});
+
+    // Queries LCD refresh rate via SystemInfo (CMD 0x02). Returns nullopt on timeout.
+    std::optional<std::uint8_t> TryGetRefreshRate(
         hid_device* dev,
         const ProtocolConstants& proto = {});
 
