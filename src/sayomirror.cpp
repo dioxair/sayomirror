@@ -169,9 +169,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (hid_get_product_string(appState->dev.get(), buf, _countof(buf)) == 0) {
             sayomirror::logging::LogLine(std::format(L"Product String: {}", std::wstring_view(buf)));
         }
-        if (hid_get_serial_number_string(appState->dev.get(), buf, _countof(buf)) == 0) {
-            sayomirror::logging::LogLine(std::format(L"Serial Number String: {}", std::wstring_view(buf)));
-        }
 
         const std::optional<std::pair<uint16_t, uint16_t>> lcd = TryGetLcdSize(appState->dev.get(), appState->proto);
         if (!lcd) {
