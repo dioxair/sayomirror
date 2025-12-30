@@ -26,6 +26,8 @@ namespace sayomirror {
 
         std::wstring statusText;
 
+        std::mutex stateMutex;
+
         uint16_t srcW = 0;
         uint16_t srcH = 0;
 

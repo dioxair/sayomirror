@@ -36,7 +36,13 @@ void sayomirror::capture::StartCaptureThread(sayomirror::AppState* appState, con
         std::vector<uint8_t> frame;
 
         while (!appState->stop.load(std::memory_order_relaxed)) {
-            if (!appState->dev || appState->srcW == 0 || appState->srcH == 0) {
+            bool isReady = false;
+            {
+                std::lock_guard<std::mutex> lock(appState->stateMutex);
+                isReady = (appState->dev != nullptr) && (appState->srcW != 0) && (appState->srcH != 0);
+            }
+
+            if (!isReady) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 continue;
             }
@@ -51,18 +57,42 @@ void sayomirror::capture::StartCaptureThread(sayomirror::AppState* appState, con
 
             sayo::CaptureStats stats{};
             const auto t0 = Clock::now();
-            const bool didCaptureFrame = CaptureScreenFrame(
-                appState->dev.get(),
-                appState->srcW,
-                appState->srcH,
-                appState->scratchIn, // reference
-                frame, // reference
-                &stats,
-                appState->proto);
+
+            sayo::CaptureFrameResult captureResult = sayo::CaptureFrameResult::NoData;
+            bool shouldNotifyDisconnect = false;
+            {
+                std::lock_guard<std::mutex> lock(appState->stateMutex);
+                if (!appState->dev) {
+                    captureResult = sayo::CaptureFrameResult::NoData;
+                }
+                else {
+                    captureResult = sayo::CaptureScreenFrame(
+                        appState->dev.get(),
+                        appState->srcW,
+                        appState->srcH,
+                        appState->scratchIn, // reference
+                        frame, // reference
+                        &stats,
+                        appState->proto);
+
+                    if (captureResult == sayo::CaptureFrameResult::DeviceError) {
+                        shouldNotifyDisconnect = true;
+                        appState->stop.store(true, std::memory_order_relaxed);
+                    }
+                }
+            }
+
             const auto t1 = Clock::now();
             lastFrameMs = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-            if (didCaptureFrame) {
+            if (captureResult == sayo::CaptureFrameResult::DeviceError) {
+                if (shouldNotifyDisconnect) {
+                    PostMessageW(hwnd, sayomirror::WM_APP_SAYODEVICE_DISCONNECTED, 0, 0);
+                }
+                break;
+            }
+
+            if (captureResult == sayo::CaptureFrameResult::Ok) {
                 framesInWindow++;
                 lastStats = stats;
 

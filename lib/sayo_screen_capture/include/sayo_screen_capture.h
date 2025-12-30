@@ -27,6 +27,12 @@ namespace sayo {
         uint32_t durationMs = 0;
     };
 
+    enum class CaptureFrameResult : uint8_t {
+        Ok = 0,
+        NoData,
+        DeviceError,
+    };
+
     // shoutout to this sketchy ass german website for saving this project: https://www.uwe-sieber.de/usbtreeview_e.html#download
     struct DeviceIds {
         // if you are reading this (yes you!) and you own a sayodevice o3c/o3c++, make a github issue with
@@ -78,7 +84,7 @@ namespace sayo {
 
     // Captures the screen buffer into RGB565 (little-endian, 2 bytes/pixel).
     // outRgb565 will be resized to width * height * 2.
-    bool CaptureScreenFrame(
+    CaptureFrameResult CaptureScreenFrame(
         hid_device* handle,
         uint16_t lcdW,
         uint16_t lcdH,

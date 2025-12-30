@@ -4,6 +4,8 @@
 
 namespace sayomirror {
     struct AppState;
+    
+    constexpr UINT WM_APP_SAYODEVICE_DISCONNECTED = WM_APP + 1;
 }
 
 namespace sayomirror::capture {

@@ -150,7 +150,7 @@ namespace sayo {
         }
     }
 
-#if _DEBUG 
+#if _DEBUG
     void DumpDevices(const DeviceIds& ids, const OutputStream output) {
         std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
         std::wostream& wout = (output == OutputStream::StdErr) ? std::wcerr : std::wcout;
@@ -194,7 +194,8 @@ namespace sayo {
             // IMPORTANT: MI_01 exposes multiple top-level collections.
             // Some of them are keyboard/consumer/etc and will deny WriteFile.
             // The report-id 0x22 channel is typically exposed as usage_page=0xFF12 usage=0x02.
-            auto find_first = [&](const unsigned short usagePage, const unsigned short usage) -> const hid_device_info* {
+            auto find_first = [&](const unsigned short usagePage, const unsigned short usage) -> const hid_device_info*
+            {
                 for (const hid_device_info* it = devsList; it; it = it->next) {
                     if (it->interface_number != 1) {
                         continue;
@@ -269,7 +270,7 @@ namespace sayo {
     std::optional<std::pair<uint16_t, uint16_t>> TryGetLcdSize(hid_device* dev, const ProtocolConstants& proto) {
         // Request SystemInfo (CMD 0x02), index 0, empty body.
         const std::vector<uint8_t> out = build_report_22(proto.echo, proto.cmdSystemInfo, 0x00, {}, proto.headerSize,
-                                         proto.reportLen22);
+                                                         proto.reportLen22);
         const int response = hid_write(dev, out.data(), static_cast<int>(out.size()));
         if (response < 0) {
             return std::nullopt;
@@ -318,7 +319,7 @@ namespace sayo {
         return std::nullopt;
     }
 
-    bool CaptureScreenFrame(
+    CaptureFrameResult CaptureScreenFrame(
         hid_device* handle,
         const uint16_t lcdW,
         const uint16_t lcdH,
@@ -328,7 +329,7 @@ namespace sayo {
         const ProtocolConstants& proto) {
         const size_t expectedFrameBytes = static_cast<size_t>(lcdW) * static_cast<size_t>(lcdH) * 2;
         if (lcdW == 0 || lcdH == 0) {
-            return false;
+            return CaptureFrameResult::NoData;
         }
         if (scratchIn.size() != proto.reportLen22) {
             scratchIn.assign(proto.reportLen22, 0);
@@ -344,26 +345,29 @@ namespace sayo {
         }
 
         const std::vector<uint8_t> req = build_report_22(proto.echo, proto.cmdScreenBuffer, 0x00, {}, proto.headerSize,
-                                         proto.reportLen22);
+                                                         proto.reportLen22);
         const auto t0 = std::chrono::steady_clock::now();
         const int response = hid_write(handle, req.data(), static_cast<int>(req.size()));
         if (response < 0) {
-            return false;
+            return CaptureFrameResult::DeviceError;
         }
 
         size_t maxEnd = 0;
         auto lastChunk = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(proto.commandTimeoutMs)) {
-            const int r = hid_read_timeout(handle, scratchIn.data(), static_cast<int>(scratchIn.size()),
-                                           static_cast<int>(proto.readTimeoutMs));
-            if (r <= 0) {
+            const int response = hid_read_timeout(handle, scratchIn.data(), static_cast<int>(scratchIn.size()),
+                                                  static_cast<int>(proto.readTimeoutMs));
+            if (response < 0) {
+                return CaptureFrameResult::DeviceError;
+            }
+            if (response == 0) {
                 if (maxEnd >= expectedFrameBytes && (std::chrono::steady_clock::now() - lastChunk) >
                     std::chrono::milliseconds(proto.idleBreakMs)) {
                     break;
                 }
                 continue;
             }
-            if (static_cast<size_t>(r) < proto.headerSize) {
+            if (static_cast<size_t>(response) < proto.headerSize) {
                 continue;
             }
             if (scratchIn[0] != proto.reportId22) {
@@ -375,7 +379,7 @@ namespace sayo {
             if (scratchIn[6] != proto.cmdScreenBuffer) {
                 continue;
             }
-            if (!verify_crc(scratchIn.data(), static_cast<size_t>(r), proto.headerSize)) {
+            if (!verify_crc(scratchIn.data(), static_cast<size_t>(response), proto.headerSize)) {
                 continue;
             }
 
@@ -383,7 +387,7 @@ namespace sayo {
                 stats->packets++;
             }
 
-            const HidHeader h = parse_header(scratchIn.data(), static_cast<size_t>(r));
+            const HidHeader h = parse_header(scratchIn.data(), static_cast<size_t>(response));
             const size_t dataEnd = static_cast<size_t>(h.len) + 4;
             if (dataEnd <= proto.headerSize || dataEnd > scratchIn.size()) {
                 continue;
@@ -416,7 +420,7 @@ namespace sayo {
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count());
         }
 
-        return maxEnd > 0;
+        return (maxEnd > 0) ? CaptureFrameResult::Ok : CaptureFrameResult::NoData;
     }
 
 #if _DEBUG

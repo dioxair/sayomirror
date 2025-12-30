@@ -209,6 +209,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     }
     case WM_TIMER:
         if (wParam == kPresentTimerId) {
+            // prevent flicker
+            if (appState) {
+                bool haveDevice = false;
+                {
+                    std::lock_guard lock(appState->stateMutex);
+                    haveDevice = (appState->dev != nullptr);
+                }
+                if (!haveDevice) {
+                    KillTimer(hWnd, kPresentTimerId);
+                    return 0;
+                }
+            }
+
             InvalidateRect(hWnd, nullptr, FALSE);
 
             if (appState && appState->presentTargetPeriodMs > 0.0) {
@@ -218,12 +231,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         break;
+    case sayomirror::WM_APP_SAYODEVICE_DISCONNECTED:
+        if (appState) {
+            KillTimer(hWnd, kPresentTimerId);
+            sayomirror::capture::StopCaptureThread(appState);
+
+            {
+                std::lock_guard lock(appState->stateMutex);
+                appState->dev.reset();
+                appState->statusText =
+                    L"SayoDevice disconnected/no longer found. Reconnect the device and reopen the program.";
+            }
+
+            InvalidateRect(hWnd, nullptr, TRUE);
+        }
+        return 0;
     case WM_ERASEBKGND:
         // When the device is open, WM_PAINT blits the full client area so we
         // suppress background erases to reduce flicker. In error/not-opened
         // states, let DefWindowProc erase to the class background brush.
-        if (appState && appState->dev) {
-            return 1;
+        if (appState) {
+            std::lock_guard lock(appState->stateMutex);
+            if (appState->dev) {
+                return 1;
+            }
         }
         return DefWindowProc(hWnd, message, wParam, lParam);
     case WM_LBUTTONDBLCLK:
@@ -247,11 +278,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
 
-        if (!appState->dev) {
-            if (appState->statusText.empty()) {
-                const auto logName = sayomirror::logging::BuildDailyLogPath().filename().wstring();
-                appState->statusText = L"Device not opened. Check " + logName;
+        std::wstring statusText;
+        
+        {
+            std::lock_guard lock(appState->stateMutex);
+            if (!appState->dev) {
+                if (appState->statusText.empty()) {
+                    const auto logName = sayomirror::logging::BuildDailyLogPath().filename().wstring();
+                    appState->statusText = L"Device not opened. Check " + logName;
+                }
+                statusText = appState->statusText;
             }
+        }
+
+        if (!statusText.empty()) {
 
             FillRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOW));
             (void)SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
@@ -266,8 +306,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
             const int availW = (std::max)(0L, textRc.right - textRc.left);
             const int availH = (std::max)(0L, textRc.bottom - textRc.top);
-            const wchar_t* text = appState->statusText.c_str();
-            const int textLen = static_cast<int>(appState->statusText.size());
+            const wchar_t* text = statusText.c_str();
+            const int textLen = static_cast<int>(statusText.size());
 
             HFONT chosenFont = nullptr;
             HGDIOBJ prevFont = nullptr;
@@ -346,7 +386,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         const int dstH = clientH;
 
         {
-            std::lock_guard<std::mutex> lock(appState->latestMutex);
+            std::lock_guard lock(appState->latestMutex);
             if (!appState->latestRgb565.empty()) {
                 sayo::BlitRgb565ToHdc(
                     hdc,
@@ -372,6 +412,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         KillTimer(hWnd, kPresentTimerId);
         sayomirror::capture::StopCaptureThread(appState);
         if (appState) {
+            std::lock_guard lock(appState->stateMutex);
             appState->dev.reset();
         }
         hid_exit();
