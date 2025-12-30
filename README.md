@@ -3,6 +3,8 @@
 
 A small Win32 C++ app displays the internal screen of your SayoDevice O3C/O3C++ in a desktop window 
 
+**If you run into any issues, please make a [GitHub Issue](https://github.com/dioxair/sayomirror/issues) since I've only tested this on one device!**
+
 ## Usage
 
 - [Download the .zip from the GitHub Releases page](https://github.com/dioxair/sayomirror/releases/latest/sayomirror.zip)
@@ -14,7 +16,6 @@ This project is under the GPL-3.0 license
 
 This repository includes third-party code/binaries:
 - HIDAPI headers in [lib/hidapi-win/include/](lib/hidapi-win/include/)
-- hidapi binaries in [lib/hidapi-win/x64/](lib/hidapi-win/x64/)
 
 See the upstream HIDAPI project for its licensing details:
 https://github.com/libusb/hidapi
