@@ -7,7 +7,7 @@ A small Win32 C++ app displays the internal screen of your SayoDevice O3C/O3C++ 
 
 ## Usage
 
-- [Download the .zip from the GitHub Releases page](https://github.com/dioxair/sayomirror/releases/latest/sayomirror.zip)
+- [Download the .zip from the GitHub Releases page](https://github.com/dioxair/sayomirror/releases/latest/download/sayomirror.zip)
 - Extract the .zip file to a folder anywhere and run the .exe
 - Bonus: Double-click inside the window to re-fit the window to the device aspect/scale
 
