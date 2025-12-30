@@ -147,6 +147,7 @@ namespace sayo {
         }
     }
 
+#if _DEBUG 
     void DumpDevices(const DeviceIds& ids, const OutputStream output) {
         std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
         std::wostream& wout = (output == OutputStream::StdErr) ? std::wcerr : std::wcout;
@@ -176,6 +177,7 @@ namespace sayo {
         }
         hid_free_enumeration(devs);
     }
+#endif
 
     OpenResult OpenVendorInterface(const DeviceIds& ids, const OutputStream output) {
         std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
@@ -406,6 +408,7 @@ namespace sayo {
         return maxEnd > 0;
     }
 
+#if _DEBUG
     bool WriteRgb565BinFile(const std::string& path, const std::vector<uint8_t>& rgb565, const uint16_t width,
                             const uint16_t height) {
         const size_t expected = static_cast<size_t>(width) * static_cast<size_t>(height) * 2;
@@ -481,6 +484,7 @@ namespace sayo {
 
         return static_cast<bool>(f);
     }
+#endif
 
 #if defined(_WIN32)
     bool BlitRgb565ToHdc(
