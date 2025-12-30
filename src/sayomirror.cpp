@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <format>
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -231,6 +232,109 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         break;
+    case WM_SIZING: {
+        if (!appState || appState->srcW == 0 || appState->srcH == 0) {
+            break;
+        }
+
+        RECT* const proposed = reinterpret_cast<RECT*>(lParam);
+        if (!proposed) {
+            break;
+        }
+
+        const LONG_PTR style = GetWindowLongPtrW(hWnd, GWL_STYLE);
+        const LONG_PTR exStyle = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
+
+        RECT test{0, 0, 100, 100};
+        if (!AdjustWindowRectEx(&test, static_cast<DWORD>(style), FALSE, static_cast<DWORD>(exStyle))) {
+            break;
+        }
+        const int extraW = (test.right - test.left) - 100;
+        const int extraH = (test.bottom - test.top) - 100;
+
+        const int winW = static_cast<int>(proposed->right - proposed->left);
+        const int winH = static_cast<int>(proposed->bottom - proposed->top);
+        const int baseClientW = (std::max)(1, winW - extraW);
+        const int baseClientH = (std::max)(1, winH - extraH);
+
+        const double aspect = static_cast<double>(appState->srcW) / static_cast<double>(appState->srcH);
+
+        int clientW = baseClientW;
+        int clientH = baseClientH;
+
+        const auto adjustFromWidth = [&]() {
+            clientH = (std::max)(1, static_cast<int>(std::lround(static_cast<double>(clientW) / aspect)));
+        };
+        const auto adjustFromHeight = [&]() {
+            clientW = (std::max)(1, static_cast<int>(std::lround(static_cast<double>(clientH) * aspect)));
+        };
+
+        switch (wParam) {
+        case WMSZ_LEFT:
+        case WMSZ_RIGHT:
+            adjustFromWidth();
+            break;
+        case WMSZ_TOP:
+        case WMSZ_BOTTOM:
+            adjustFromHeight();
+            break;
+        case WMSZ_TOPLEFT:
+        case WMSZ_TOPRIGHT:
+        case WMSZ_BOTTOMLEFT:
+        case WMSZ_BOTTOMRIGHT: {
+            const int expectedH = (std::max)(1, static_cast<int>(std::lround(static_cast<double>(clientW) / aspect)));
+            const int expectedW = (std::max)(1, static_cast<int>(std::lround(static_cast<double>(clientH) * aspect)));
+            const int errH = std::abs(clientH - expectedH);
+            const int errW = std::abs(clientW - expectedW);
+            if (errH <= errW) {
+                clientH = expectedH;
+            } else {
+                clientW = expectedW;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+        const int newWinW = clientW + extraW;
+        const int newWinH = clientH + extraH;
+
+        switch (wParam) {
+        case WMSZ_LEFT:
+            proposed->left = proposed->right - newWinW;
+            break;
+        case WMSZ_RIGHT:
+            proposed->right = proposed->left + newWinW;
+            break;
+        case WMSZ_TOP:
+            proposed->top = proposed->bottom - newWinH;
+            break;
+        case WMSZ_BOTTOM:
+            proposed->bottom = proposed->top + newWinH;
+            break;
+        case WMSZ_TOPLEFT:
+            proposed->left = proposed->right - newWinW;
+            proposed->top = proposed->bottom - newWinH;
+            break;
+        case WMSZ_TOPRIGHT:
+            proposed->right = proposed->left + newWinW;
+            proposed->top = proposed->bottom - newWinH;
+            break;
+        case WMSZ_BOTTOMLEFT:
+            proposed->left = proposed->right - newWinW;
+            proposed->bottom = proposed->top + newWinH;
+            break;
+        case WMSZ_BOTTOMRIGHT:
+            proposed->right = proposed->left + newWinW;
+            proposed->bottom = proposed->top + newWinH;
+            break;
+        default:
+            break;
+        }
+
+        return TRUE;
+    }
     case sayomirror::WM_APP_SAYODEVICE_DISCONNECTED:
         if (appState) {
             KillTimer(hWnd, kPresentTimerId);
