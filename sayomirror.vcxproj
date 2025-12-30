@@ -167,7 +167,6 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="sayomirror.ico" />
-    <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
     <None Include="lib\hidapi-win\x64\hidapi.dll" />

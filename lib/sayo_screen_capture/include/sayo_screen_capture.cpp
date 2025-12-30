@@ -5,7 +5,10 @@
 #include <cstring>
 #include <cwctype>
 #include <fstream>
+
+#if _DEBUG
 #include <iostream>
+#endif
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -180,7 +183,9 @@ namespace sayo {
 #endif
 
     OpenResult OpenVendorInterface(const DeviceIds& ids, const OutputStream output) {
-        std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
+#if !_DEBUG
+        (void)output;
+#endif
         OpenResult result{};
 
         auto pick_best = [&](hid_device_info* devsList) -> const hid_device_info* {
@@ -233,17 +238,23 @@ namespace sayo {
         hid_device_info* devs = hid_enumerate(ids.vid, ids.pid);
         const hid_device_info* best = pick_best(devs);
         if (!best && (ids.vid != 0 || ids.pid != 0)) {
+#if _DEBUG
+            std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
             out << "No matching devices found for VID/PID, falling back to enumerate all HID devices.\n";
+#endif
             hid_free_enumeration(devs);
             devs = hid_enumerate(0, 0);
             best = pick_best(devs);
         }
 
         if (best && best->path) {
+#if _DEBUG
+            std::ostream& out = (output == OutputStream::StdErr) ? std::cerr : std::cout;
             out << "Opening path: " << best->path
                 << " (interface=" << best->interface_number
                 << " usage_page=0x" << std::hex << best->usage_page
                 << " usage=0x" << best->usage << std::dec << ")\n";
+#endif
             result.handle = hid_open_path(best->path);
             result.openedPath = best->path;
             result.usagePage = best->usage_page;
