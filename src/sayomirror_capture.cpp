@@ -33,21 +33,30 @@ void sayomirror::capture::StartCaptureThread(sayomirror::AppState* appState, con
         uint32_t lastFrameMs = 0;
         sayo::CaptureStats lastStats{};
 
+        std::vector<uint8_t> frame;
+
         while (!appState->stop.load(std::memory_order_relaxed)) {
             if (!appState->dev || appState->srcW == 0 || appState->srcH == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 continue;
             }
 
-            std::vector<uint8_t> frame;
+            // should be exactly 25600 bytes on 160x80 displays!!!
+            const size_t expectedFrameBytes =
+                static_cast<size_t>(appState->srcW) * static_cast<size_t>(appState->srcH) * static_cast<size_t>(2);
+            if (frame.capacity() < expectedFrameBytes) {
+                frame.reserve(expectedFrameBytes);
+            }
+            frame.clear();
+
             sayo::CaptureStats stats{};
             const auto t0 = Clock::now();
             const bool didCaptureFrame = CaptureScreenFrame(
                 appState->dev.get(),
                 appState->srcW,
                 appState->srcH,
-                appState->scratchIn,
-                frame,
+                appState->scratchIn, // reference
+                frame, // reference
                 &stats,
                 appState->proto);
             const auto t1 = Clock::now();
