@@ -127,34 +127,40 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-	  <AdditionalIncludeDirectories>$(ProjectDir)lib\hidapi-win\include;$(ProjectDir)lib\sayo_screen_capture\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-	  <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)lib\hidapi-win\include;$(ProjectDir)lib\sayo_screen_capture\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-	  <AdditionalDependencies>$(ProjectDir)lib\hidapi-win\x64\hidapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-	  <AdditionalLibraryDirectories>$(ProjectDir)lib\hidapi-win\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(ProjectDir)lib\hidapi-win\x64\hidapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)lib\hidapi-win\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
-	<PostBuildEvent>
-	  <Command>copy /Y "$(ProjectDir)lib\hidapi-win\x64\hidapi.dll" "$(OutDir)"
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)lib\hidapi-win\x64\hidapi.dll" "$(OutDir)"
 </Command>
-	</PostBuildEvent>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h" />
+    <ClInclude Include="src\framework.h" />
     <ClInclude Include="lib\hidapi-win\include\hidapi.h" />
     <ClInclude Include="lib\hidapi-win\include\hidapi_winapi.h" />
     <ClInclude Include="lib\sayo_screen_capture\include\sayo_screen_capture.h" />
-    <ClInclude Include="Resource.h" />
-    <ClInclude Include="sayomirror.h" />
-    <ClInclude Include="targetver.h" />
+    <ClInclude Include="src\Resource.h" />
+    <ClInclude Include="src\sayomirror.h" />
+    <ClInclude Include="src\sayomirror_capture.h" />
+    <ClInclude Include="src\sayomirror_logging.h" />
+    <ClInclude Include="src\sayomirror_window_utils.h" />
+    <ClInclude Include="src\targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="lib\sayo_screen_capture\include\sayo_screen_capture.cpp" />
-    <ClCompile Include="sayomirror.cpp" />
+    <ClCompile Include="src\sayomirror.cpp" />
+    <ClCompile Include="src\sayomirror_capture.cpp" />
+    <ClCompile Include="src\sayomirror_logging.cpp" />
+    <ClCompile Include="src\sayomirror_window_utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sayomirror.rc" />

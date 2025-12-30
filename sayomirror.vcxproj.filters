@@ -15,16 +15,25 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h">
+    <ClInclude Include="src\framework.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="targetver.h">
+    <ClInclude Include="src\targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Resource.h">
+    <ClInclude Include="src\Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="sayomirror.h">
+    <ClInclude Include="src\sayomirror.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\sayomirror_capture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\sayomirror_logging.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\sayomirror_window_utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="lib\hidapi-win\include\hidapi.h">
@@ -38,10 +47,19 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="sayomirror.cpp">
+    <ClCompile Include="src\sayomirror.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="lib\sayo_screen_capture\include\sayo_screen_capture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\sayomirror_capture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\sayomirror_logging.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\sayomirror_window_utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

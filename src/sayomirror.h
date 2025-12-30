@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-#include "resource.h"
+#include "Resource.h"
 
 #include "sayo_screen_capture.h"
 
