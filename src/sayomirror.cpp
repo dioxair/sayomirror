@@ -83,8 +83,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
     wcex.hInstance = hInstance;
     wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SAYOMIRROR));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = nullptr;
-    // No menu bar (removes the "File / About" strip).
+    wcex.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
@@ -149,7 +148,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         const sayo::OpenResult opened = OpenVendorInterface(appState->ids, sayo::OutputStream::StdOut);
         appState->dev.reset(opened.handle);
         if (!appState->dev) {
-            sayomirror::logging::LogLine(L"No compatible SayoDevice HID interface found.");
+            appState->statusText =
+                L"No compatible SayoDevice HID interface found :(\n\n"
+                L"Please make a GitHub Issue at https://github.com/dioxair/sayomirror and follow the directions to report this bug";
+            sayomirror::logging::LogLine(appState->statusText);
             break;
         }
 
@@ -183,14 +185,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         }
 
-        sayomirror::logging::LogLine(std::format(L"LCD size reported by device: {}x{}", appState->srcW, appState->srcH));
+        sayomirror::logging::LogLine(std::format(L"LCD size reported by device: {}x{}", appState->srcW,
+                                                 appState->srcH));
 
         sayomirror::window_utils::FitWindowToDevice(hWnd, appState->srcW, appState->srcH);
 
         appState->presentTargetPeriodMs = sayomirror::window_utils::ComputeTargetPresentPeriodMs(hWnd);
         if (appState->presentTargetPeriodMs > 0.0) {
             const double hz = 1000.0 / appState->presentTargetPeriodMs;
-            sayomirror::logging::LogLine(std::format(L"monitor refresh (approx): {:.3f} Hz (target {:.3f} ms)", hz, appState->presentTargetPeriodMs));
+            sayomirror::logging::LogLine(std::format(L"monitor refresh (approx): {:.3f} Hz (target {:.3f} ms)", hz,
+                                                     appState->presentTargetPeriodMs));
         }
 
         appState->scratchIn.assign(appState->proto.reportLen22, 0);
@@ -212,7 +216,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
         break;
     case WM_ERASEBKGND:
-        return 1;
+        // When the device is open, WM_PAINT blits the full client area so we
+        // suppress background erases to reduce flicker. In error/not-opened
+        // states, let DefWindowProc erase to the class background brush.
+        if (appState && appState->dev) {
+            return 1;
+        }
+        return DefWindowProc(hWnd, message, wParam, lParam);
     case WM_LBUTTONDBLCLK:
         if (appState && appState->srcW && appState->srcH) {
             sayomirror::window_utils::FitWindowToDevice(hWnd, appState->srcW, appState->srcH);
@@ -231,8 +241,92 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
 
         if (!appState->dev) {
-            const auto logName = sayomirror::logging::BuildDailyLogPath().filename().wstring();
-            const std::wstring msg = L"Device not opened. Check " + logName;
+            if (appState->statusText.empty()) {
+                const auto logName = sayomirror::logging::BuildDailyLogPath().filename().wstring();
+                appState->statusText = L"Device not opened. Check " + logName;
+            }
+
+            FillRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOW));
+            (void)SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
+
+            (void)SetBkMode(hdc, TRANSPARENT);
+            RECT textRc = rc;
+            constexpr int pad = 12;
+            textRc.left += pad;
+            textRc.right -= pad;
+            textRc.top += pad;
+            textRc.bottom -= pad;
+
+            const int availW = (std::max)(0L, textRc.right - textRc.left);
+            const int availH = (std::max)(0L, textRc.bottom - textRc.top);
+            const wchar_t* text = appState->statusText.c_str();
+            const int textLen = static_cast<int>(appState->statusText.size());
+
+            HFONT chosenFont = nullptr;
+            HGDIOBJ prevFont = nullptr;
+
+            const int startPx = (std::max)(18, availH / 7);
+            constexpr int minPx = 12;
+            for (int px = startPx; px >= minPx; px -= 2) {
+                const HFONT tryFont = CreateFontW(
+                    -px,
+                    0,
+                    0,
+                    0,
+                    FW_SEMIBOLD,
+                    FALSE,
+                    FALSE,
+                    FALSE,
+                    DEFAULT_CHARSET,
+                    OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS,
+                    CLEARTYPE_QUALITY,
+                    DEFAULT_PITCH | FF_DONTCARE,
+                    L"Segoe UI");
+                if (!tryFont) {
+                    continue;
+                }
+
+                const HGDIOBJ prev = SelectObject(hdc, tryFont);
+                RECT calc = {0, 0, availW, 0};
+                const int calcH = DrawTextW(
+                    hdc,
+                    text,
+                    textLen,
+                    &calc,
+                    DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_CALCRECT);
+
+                const int needW = static_cast<int>(calc.right - calc.left);
+                const int needH = calcH;
+
+                SelectObject(hdc, prev);
+                if (needW <= availW && needH <= availH) {
+                    chosenFont = tryFont;
+                    break;
+                }
+                DeleteObject(tryFont);
+            }
+
+            if (!chosenFont) {
+                chosenFont = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+            }
+
+            prevFont = chosenFont ? SelectObject(hdc, chosenFont) : nullptr;
+
+            DrawTextW(
+                hdc,
+                text,
+                textLen,
+                &textRc,
+                DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_NOPREFIX);
+
+            if (prevFont) {
+                SelectObject(hdc, prevFont);
+            }
+
+            if (chosenFont && chosenFont != GetStockObject(DEFAULT_GUI_FONT)) {
+                DeleteObject(chosenFont);
+            }
             EndPaint(hWnd, &ps);
             return 0;
         }

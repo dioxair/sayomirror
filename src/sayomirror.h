@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -22,6 +23,8 @@ namespace sayomirror {
 		sayo::DeviceIds ids{};
 		sayo::ProtocolConstants proto{};
 		std::unique_ptr<hid_device, HidDeviceDeleter> dev;
+
+		std::wstring statusText;
 
 		uint16_t srcW = 0;
 		uint16_t srcH = 0;
