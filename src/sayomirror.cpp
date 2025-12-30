@@ -156,12 +156,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         }
 
+        // usage_page=0xFF12: report_id 0x22, 1024-byte reports (high-speed)
+        // usage_page=0xFF11: report_id 0x21, 64-byte reports (other polling rates)
+        if (opened.usagePage == 0xFF11) {
+            appState->proto.reportId22 = 0x21;
+            appState->proto.reportLen22 = 64;
+        } else if (opened.usagePage == 0xFF12) {
+            appState->proto.reportId22 = 0x22;
+            appState->proto.reportLen22 = 1024;
+        } else if (opened.usagePage == 0xFF00) {
+            appState->statusText =
+                L"Found a legacy SayoDevice HID interface (usage_page=0xFF00), but sayomirror currently needs the HID v2 interface "
+                L"(usage_page=0xFF11 or 0xFF12) to read the framebuffer.";
+            sayomirror::logging::LogLine(appState->statusText);
+            break;
+        }
+
         sayomirror::logging::LogLine(std::format(
-            L"Opening path: {} (interface={} usage_page=0x{:x} usage=0x{:x})",
+            L"Opening path: {} (interface={} usage_page=0x{:x} usage=0x{:x}, report_id=0x{:x}, report_len={})",
             sayomirror::logging::AsciiToWide(opened.openedPath),
             opened.interfaceNumber,
             static_cast<unsigned>(opened.usagePage),
-            static_cast<unsigned>(opened.usage)));
+            static_cast<unsigned>(opened.usage),
+            static_cast<unsigned>(appState->proto.reportId22),
+            static_cast<unsigned>(appState->proto.reportLen22)));
 
         wchar_t buf[256]{};
         if (hid_get_manufacturer_string(appState->dev.get(), buf, _countof(buf)) == 0) {

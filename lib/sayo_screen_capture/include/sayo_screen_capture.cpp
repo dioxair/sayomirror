@@ -69,9 +69,15 @@ namespace sayo {
             h.reportId = report[0];
             h.echo = report[1];
             h.crc = static_cast<uint16_t>(report[2] | (static_cast<uint16_t>(report[3]) << 8));
-            const uint16_t staLen = static_cast<uint16_t>(report[4] | (static_cast<uint16_t>(report[5]) << 8));
-            h.status = static_cast<uint8_t>(staLen >> 10);
-            h.len = static_cast<uint16_t>(staLen & 0x03FF);
+            const uint16_t lenField = static_cast<uint16_t>(report[4] | (static_cast<uint16_t>(report[5]) << 8));
+
+            if ((lenField & 0xFC00u) != 0u) {
+                h.status = static_cast<uint8_t>(lenField >> 10);
+                h.len = static_cast<uint16_t>(lenField & 0x03FFu);
+            } else {
+                h.status = 0;
+                h.len = lenField;
+            }
             h.cmd = report[6];
             h.index = report[7];
             return h;
@@ -98,24 +104,24 @@ namespace sayo {
             return packetCrc == crc;
         }
 
-        std::vector<uint8_t> build_report_22(
+        std::vector<uint8_t> build_report_v2(
+            const uint8_t reportId,
             const uint8_t echo,
             const uint8_t cmd,
             const uint8_t index,
             const std::vector<uint8_t>& body,
             const size_t headerSize,
-            const size_t reportLen22) {
-            std::vector<uint8_t> out(reportLen22, 0);
-            out[0] = 0x22;
+            const size_t reportLen) {
+            std::vector<uint8_t> out(reportLen, 0);
+            out[0] = reportId;
             out[1] = echo;
             out[2] = 0;
             out[3] = 0;
 
             // sayo_api_rs sets header.len to (body_len + 0x04)
             const uint16_t lenField = static_cast<uint16_t>(body.size() + 0x04);
-            const uint16_t staLen = static_cast<uint16_t>((0x00u << 10) | (lenField & 0x03FFu));
-            out[4] = static_cast<uint8_t>(staLen & 0xFF);
-            out[5] = static_cast<uint8_t>((staLen >> 8) & 0xFF);
+            out[4] = static_cast<uint8_t>(lenField & 0xFF);
+            out[5] = static_cast<uint8_t>((lenField >> 8) & 0xFF);
             out[6] = cmd;
             out[7] = index;
 
@@ -267,14 +273,17 @@ namespace sayo {
 
     std::optional<std::pair<uint16_t, uint16_t>> TryGetLcdSize(hid_device* dev, const ProtocolConstants& proto) {
         // Request SystemInfo (CMD 0x02), index 0, empty body.
-        const std::vector<uint8_t> out = build_report_22(proto.echo, proto.cmdSystemInfo, 0x00, {}, proto.headerSize,
-                                                         proto.reportLen22);
+        const std::vector<uint8_t> out = build_report_v2(proto.reportId22, proto.echo, proto.cmdSystemInfo, 0x00, {},
+                                                         proto.headerSize, proto.reportLen22);
         const int response = hid_write(dev, out.data(), static_cast<int>(out.size()));
         if (response < 0) {
             return std::nullopt;
         }
 
         std::vector<uint8_t> in(proto.reportLen22, 0);
+        const auto echo_ok = [&](const uint8_t echo) {
+            return echo == proto.echo || echo == 0x00 || echo == 0x03 || echo == 0x13;
+        };
         const auto start = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(proto.commandTimeoutMs)) {
             const int r = hid_read_timeout(dev, in.data(), static_cast<int>(in.size()),
@@ -290,7 +299,7 @@ namespace sayo {
             if (h.reportId != proto.reportId22) {
                 continue;
             }
-            if (h.echo != proto.echo && h.echo != 0x00) {
+            if (!echo_ok(h.echo)) {
                 continue;
             }
             if (!verify_crc(in.data(), static_cast<size_t>(r), proto.headerSize)) {
@@ -305,7 +314,7 @@ namespace sayo {
                 continue;
             }
             const size_t payloadLen = dataEnd - proto.headerSize;
-            if (payloadLen < 5) {
+            if (payloadLen < 4) {
                 continue;
             }
             const uint8_t* payload = in.data() + proto.headerSize;
@@ -319,14 +328,17 @@ namespace sayo {
 
     std::optional<std::uint8_t> TryGetRefreshRate(hid_device* dev, const ProtocolConstants& proto) {
         // Request SystemInfo (CMD 0x02), index 0, empty body.
-        const std::vector<uint8_t> out = build_report_22(proto.echo, proto.cmdSystemInfo, 0x00, {}, proto.headerSize,
-            proto.reportLen22);
+        const std::vector<uint8_t> out = build_report_v2(proto.reportId22, proto.echo, proto.cmdSystemInfo, 0x00, {},
+                                                         proto.headerSize, proto.reportLen22);
         const int response = hid_write(dev, out.data(), static_cast<int>(out.size()));
         if (response < 0) {
             return std::nullopt;
         }
 
         std::vector<uint8_t> in(proto.reportLen22, 0);
+        const auto echo_ok = [&](const uint8_t echo) {
+            return echo == proto.echo || echo == 0x00 || echo == 0x03 || echo == 0x13;
+        };
         const auto start = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(proto.commandTimeoutMs)) {
             const int r = hid_read_timeout(dev, in.data(), static_cast<int>(in.size()),
@@ -342,7 +354,7 @@ namespace sayo {
             if (h.reportId != proto.reportId22) {
                 continue;
             }
-            if (h.echo != proto.echo && h.echo != 0x00) {
+            if (!echo_ok(h.echo)) {
                 continue;
             }
             if (!verify_crc(in.data(), static_cast<size_t>(r), proto.headerSize)) {
@@ -361,8 +373,7 @@ namespace sayo {
                 continue;
             }
             const uint8_t* payload = in.data() + proto.headerSize;
-            const uint8_t hz = static_cast<uint8_t>(payload[4] | (static_cast<uint8_t>(payload[5]) << 8));
-            return hz;
+            return payload[4];
         }
 
         return std::nullopt;
@@ -393,8 +404,8 @@ namespace sayo {
             stats->durationMs = 0;
         }
 
-        const std::vector<uint8_t> req = build_report_22(proto.echo, proto.cmdScreenBuffer, 0x00, {}, proto.headerSize,
-                                                         proto.reportLen22);
+        const std::vector<uint8_t> req = build_report_v2(proto.reportId22, proto.echo, proto.cmdScreenBuffer, 0x00, {},
+                                                         proto.headerSize, proto.reportLen22);
         const auto t0 = std::chrono::steady_clock::now();
         const int response = hid_write(handle, req.data(), static_cast<int>(req.size()));
         if (response < 0) {
@@ -403,6 +414,9 @@ namespace sayo {
 
         size_t maxEnd = 0;
         auto lastChunk = std::chrono::steady_clock::now();
+        const auto echo_ok = [&](const uint8_t echo) {
+            return echo == proto.echo || echo == 0x00 || echo == 0x03 || echo == 0x13;
+        };
         while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(proto.commandTimeoutMs)) {
             const int response = hid_read_timeout(handle, scratchIn.data(), static_cast<int>(scratchIn.size()),
                                                   static_cast<int>(proto.readTimeoutMs));
@@ -422,7 +436,7 @@ namespace sayo {
             if (scratchIn[0] != proto.reportId22) {
                 continue;
             }
-            if (scratchIn[1] != proto.echo && scratchIn[1] != 0x00) {
+            if (!echo_ok(scratchIn[1])) {
                 continue;
             }
             if (scratchIn[6] != proto.cmdScreenBuffer) {

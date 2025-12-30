@@ -40,11 +40,14 @@ namespace sayo {
     };
 
     struct ProtocolConstants {
-        uint8_t reportId22 = 0x22; // 1023-byte report payload + report id
-        uint8_t echo = 0x13; // native echo used by sayo_api_rs
+        // 0x22: high-speed mode (typically usage_page=0xFF12), 1024-byte reports
+        // 0x21: other polling rates (typically usage_page=0xFF11), 64-byte reports
+        uint8_t reportId22 = 0x22;
+        uint8_t echo = 0x03;
         uint8_t cmdSystemInfo = 0x02;
         uint8_t cmdScreenBuffer = 0x25;
         size_t headerSize = 8;
+        // including report id byte.
         size_t reportLen22 = 1024;
         uint32_t readTimeoutMs = 50;
         uint32_t commandTimeoutMs = 1500;
@@ -67,7 +70,8 @@ namespace sayo {
     // Enumerate available HID collections matching the device IDs. For debug
     void DumpDevices(const DeviceIds& ids, OutputStream output);
 
-    // Opens the vendor HID collection that can accept report-id 0x22 writes.
+    // Opens a vendor HID collection that can accept report-id writes.
+    // On O3C, this is typically usage_page=0xFF12 (report 0x22) or 0xFF11 (report 0x21).
     OpenResult OpenVendorInterface(const DeviceIds& ids, OutputStream output);
 
     // Queries LCD size via SystemInfo (CMD 0x02). Returns nullopt on timeout.
