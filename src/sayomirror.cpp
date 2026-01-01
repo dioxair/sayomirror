@@ -181,16 +181,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             static_cast<unsigned>(appState->proto.reportId22),
             static_cast<unsigned>(appState->proto.reportLen22)));
 
-        wchar_t buf[256]{};
-        if (hid_get_manufacturer_string(appState->dev.get(), buf, _countof(buf)) == 0) {
-            sayomirror::logging::LogLine(std::format(L"Manufacturer String: {}", std::wstring_view(buf)));
+        std::wstring buf(256, L'\0');
+        if (hid_get_manufacturer_string(appState->dev.get(), buf.data(), buf.size()) == 0) {
+            sayomirror::logging::LogLine(std::format(L"Manufacturer String: {}", std::wstring_view(buf.c_str())));
         }
-        if (hid_get_product_string(appState->dev.get(), buf, _countof(buf)) == 0) {
-            sayomirror::logging::LogLine(std::format(L"Product String: {}", std::wstring_view(buf)));
+        buf.assign(256, L'\0');
+        if (hid_get_product_string(appState->dev.get(), buf.data(), buf.size()) == 0) {
+            sayomirror::logging::LogLine(std::format(L"Product String: {}", std::wstring_view(buf.c_str())));
         }
 #if _DEBUG
-        if (hid_get_serial_number_string(appState->dev.get(), buf, _countof(buf)) == 0) {
-            sayomirror::logging::LogLine(std::format(L"Serial Number String: {}", std::wstring_view(buf)));
+        buf.assign(256, L'\0');
+        if (hid_get_serial_number_string(appState->dev.get(), buf.data(), buf.size()) == 0) {
+            sayomirror::logging::LogLine(std::format(L"Serial Number String: {}", std::wstring_view(buf.c_str())));
         }
 #endif
 
